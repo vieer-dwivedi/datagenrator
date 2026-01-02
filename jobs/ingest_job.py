@@ -1,26 +1,31 @@
 import ray
 import ray.data as rd
-from datasets import load_dataset
 
 def main():
-    # Connect to Ray cluster inside Kubernetes
+    # 1️⃣ Connect to Ray cluster
     ray.init(address="auto")
 
     print("Connected to Ray:", ray.cluster_resources())
 
-    # Load dataset from Hugging Face
-    hf_ds = load_dataset(
+    # 2️⃣ READ DATA USING RAY (NOT HuggingFace load_dataset)
+    # This enables parallel ingestion
+    ds = rd.read_huggingface(
         "FrancoMango/yellow-taxi",
-        split="train"
+        split="train",
+        streaming=True   # 🔥 CRITICAL: enables parallel streaming
     )
 
-    # Convert to Ray Dataset
-    ds = rd.from_huggingface(hf_ds)
+    # 3️⃣ PROVE parallelism
+    print("Initial Ray blocks:", ds.num_blocks())
 
-    # Simple validation
+    # 4️⃣ Optional: force more parallelism
+    ds = ds.repartition(8)
+    print("Blocks after repartition:", ds.num_blocks())
+
+    # 5️⃣ Parallel transformation
     ds = ds.filter(lambda r: r["trip_distance"] >= 0)
 
-    # Write output (ephemeral for now)
+    # 6️⃣ Materialize in parallel
     ds.write_parquet("/tmp/taxi_parquet")
 
     print("✅ Ingestion completed successfully")
